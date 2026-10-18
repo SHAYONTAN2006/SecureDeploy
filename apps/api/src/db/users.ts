@@ -3,11 +3,16 @@ import { prisma } from '../lib/prisma.js';
 export interface CreateUserData {
   email: string;
   name?: string;
+  passwordHash?: string | null;
 }
 
 export async function createUser(data: CreateUserData) {
   return prisma.user.create({
-    data,
+    data: {
+      email: data.email,
+      name: data.name,
+      passwordHash: data.passwordHash ?? null,
+    },
   });
 }
 

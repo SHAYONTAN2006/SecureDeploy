@@ -5,17 +5,37 @@ import express, {
   type RequestHandler,
 } from 'express';
 import cors from 'cors';
-import { requireIdentity } from './middleware/identity.js';
+import cookieParser from 'cookie-parser';
+import session from 'express-session';
+import {
+  validateSecurityConfig,
+  createPgSessionStore,
+  doubleCsrfProtection,
+  isInvalidCsrfTokenError,
+  SESSION_COOKIE_NAME,
+} from './config/security.js';
+import { requireAuth } from './middleware/auth.js';
+import { authRouter } from './routes/auth.js';
 import { projectsRouter } from './routes/projects.js';
 
 export interface AppOptions {
+  authMiddleware?: RequestHandler;
   identityMiddleware?: RequestHandler;
+  sessionStore?: session.Store;
+  enableCsrf?: boolean;
 }
 
 export function createApp(options: AppOptions = {}) {
-  const application = express();
-  const corsOrigin = process.env.CORS_ORIGIN || 'http://localhost:5173';
+  // Validate production security requirements and fail closed if insecure
+  validateSecurityConfig();
 
+  const application = express();
+  const isProduction = process.env.NODE_ENV === 'production';
+  const corsOrigin = process.env.CORS_ORIGIN || 'http://localhost:5173';
+  const sessionSecret =
+    process.env.SESSION_SECRET || 'dev-insecure-session-secret-change-in-prod-at-least-32-chars';
+
+  // Strict CORS configuration
   application.use(
     cors({
       origin: corsOrigin,
@@ -23,7 +43,35 @@ export function createApp(options: AppOptions = {}) {
     })
   );
 
-  application.use(express.json());
+  // Cookie parser signed with session secret
+  application.use(cookieParser(sessionSecret));
+
+  // Request body parsing with defensive payload limit
+  application.use(express.json({ limit: '100kb' }));
+
+  // PostgreSQL-backed session middleware
+  const store = options.sessionStore || createPgSessionStore();
+  application.use(
+    session({
+      name: SESSION_COOKIE_NAME,
+      secret: sessionSecret,
+      store,
+      resave: false,
+      saveUninitialized: false,
+      rolling: true,
+      cookie: {
+        httpOnly: true,
+        secure: isProduction,
+        sameSite: 'lax',
+        maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
+      },
+    })
+  );
+
+  // CSRF protection for state-changing requests
+  if (options.enableCsrf !== false) {
+    application.use(doubleCsrfProtection);
+  }
 
   // Health check endpoint (public, unauthenticated)
   application.get('/api/health', (_req: Request, res: Response) => {
@@ -35,9 +83,12 @@ export function createApp(options: AppOptions = {}) {
     });
   });
 
-  // Project Management API routes
-  const identity = options.identityMiddleware || requireIdentity;
-  application.use('/api/projects', identity, projectsRouter);
+  // Authentication endpoints
+  application.use('/api/auth', authRouter);
+
+  // Project Management API routes (protected by requireAuth or injected test auth)
+  const authHandler = options.authMiddleware || options.identityMiddleware || requireAuth;
+  application.use('/api/projects', authHandler, projectsRouter);
 
   // 404 handler
   application.use((_req: Request, res: Response) => {
@@ -49,7 +100,15 @@ export function createApp(options: AppOptions = {}) {
 
   // Centralized error handler
   application.use((err: Error, _req: Request, res: Response, _next: NextFunction) => {
-    const isProduction = process.env.NODE_ENV === 'production';
+    // CSRF validation error handler
+    if (isInvalidCsrfTokenError(err)) {
+      res.status(403).json({
+        error: 'Forbidden',
+        message: 'Invalid or missing CSRF token.',
+      });
+      return;
+    }
+
     const statusCode = res.statusCode && res.statusCode !== 200 ? res.statusCode : 500;
 
     res.status(statusCode).json({

@@ -28,8 +28,14 @@ describe('Project Management API (/api/projects)', () => {
     userB = { id: dbUserB.id, email: dbUserB.email, name: dbUserB.name };
     createdUserIds.push(userA.id, userB.id);
 
-    appA = createApp({ identityMiddleware: createTestIdentityMiddleware(userA) });
-    appB = createApp({ identityMiddleware: createTestIdentityMiddleware(userB) });
+    appA = createApp({
+      identityMiddleware: createTestIdentityMiddleware(userA),
+      enableCsrf: false,
+    });
+    appB = createApp({
+      identityMiddleware: createTestIdentityMiddleware(userB),
+      enableCsrf: false,
+    });
   });
 
   afterAll(async () => {
@@ -308,21 +314,27 @@ describe('Project Management API (/api/projects)', () => {
     });
   });
 
-  describe('Production Identity Security Guardrail', () => {
-    it('fails closed and returns 401 Unauthorized when NODE_ENV is production', async () => {
+  describe('Production Authentication Security Guardrail', () => {
+    it('fails closed and returns 401 Unauthorized when unauthenticated in production', async () => {
       const originalEnv = process.env.NODE_ENV;
+      const originalSecret = process.env.SESSION_SECRET;
+      const originalCors = process.env.CORS_ORIGIN;
+
       process.env.NODE_ENV = 'production';
+      process.env.SESSION_SECRET = 'a-very-long-production-session-secret-at-least-32-chars';
+      process.env.CORS_ORIGIN = 'https://app.securedeploy.io';
 
       try {
-        // App using default requireIdentity middleware
-        const prodApp = createApp();
+        const prodApp = createApp({ enableCsrf: false });
         const response = await request(prodApp).get('/api/projects');
 
         expect(response.status).toBe(401);
         expect(response.body).toHaveProperty('error', 'Unauthorized');
-        expect(response.body.message).toMatch(/development identity is disabled/i);
+        expect(response.body.message).toMatch(/authentication required/i);
       } finally {
         process.env.NODE_ENV = originalEnv;
+        process.env.SESSION_SECRET = originalSecret;
+        process.env.CORS_ORIGIN = originalCors;
       }
     });
   });

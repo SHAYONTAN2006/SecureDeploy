@@ -191,6 +191,43 @@ export default function App() {
           </div>
         </div>
 
+        {/* CI/CD Pipeline Orchestration Section */}
+        <div className="bg-slate-900/60 border border-slate-800 rounded-xl p-6 shadow-sm mb-12">
+          <div className="flex items-center justify-between mb-4">
+            <div>
+              <h2 className="text-base font-semibold text-slate-200">
+                CI/CD Pipeline Orchestration
+              </h2>
+              <p className="text-xs text-slate-400 mt-1">
+                Trigger approved GitHub Actions workflows on linked project repositories and track
+                runs.
+              </p>
+            </div>
+            <span className="text-xs font-mono uppercase bg-emerald-950/80 text-emerald-300 border border-emerald-800/80 px-2.5 py-1 rounded-full">
+              Phase 2 Active
+            </span>
+          </div>
+
+          <div className="bg-slate-950/80 border border-slate-800/80 rounded-lg p-5">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+              <div className="space-y-1">
+                <div className="text-xs font-medium text-slate-300">
+                  Workflow Dispatch &amp; Webhook Synchronization
+                </div>
+                <div className="text-[11px] text-slate-500">
+                  Dispatches `workflow_dispatch` via GitHub App installation access tokens and
+                  tracks live status via HMAC-verified webhooks.
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="inline-flex items-center text-xs font-mono px-2.5 py-1 rounded bg-slate-900 text-slate-300 border border-slate-800">
+                  POST /api/projects/:id/pipelines
+                </span>
+              </div>
+            </div>
+          </div>
+        </div>
+
         {/* Roadmap Preview */}
         <div className="bg-slate-900/40 border border-slate-800/80 rounded-xl p-6">
           <h2 className="text-xs font-semibold uppercase tracking-wider text-slate-400 mb-4">

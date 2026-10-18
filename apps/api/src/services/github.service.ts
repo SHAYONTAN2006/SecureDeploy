@@ -38,6 +38,26 @@ export interface GithubServiceApi {
     repo: string
   ): Promise<GithubRepositorySummary>;
   getInstallationAccessToken(installationId: number): Promise<string>;
+  dispatchWorkflow(
+    installationId: number,
+    owner: string,
+    repo: string,
+    workflowId: string,
+    ref: string,
+    inputs?: Record<string, string>
+  ): Promise<void>;
+  getWorkflow(
+    installationId: number,
+    owner: string,
+    repo: string,
+    workflowId: string
+  ): Promise<{ id: number; name: string; path: string; state: string }>;
+  getRef(
+    installationId: number,
+    owner: string,
+    repo: string,
+    ref: string
+  ): Promise<{ ref: string; sha: string }>;
 }
 
 /**
@@ -154,6 +174,76 @@ class OctokitGithubService implements GithubServiceApi {
     });
 
     return installationAuth.token;
+  }
+
+  async dispatchWorkflow(
+    installationId: number,
+    owner: string,
+    repo: string,
+    workflowId: string,
+    ref: string,
+    inputs?: Record<string, string>
+  ): Promise<void> {
+    const octokit = this.getInstallationOctokit(installationId);
+    await octokit.rest.actions.createWorkflowDispatch({
+      owner,
+      repo,
+      workflow_id: workflowId,
+      ref,
+      inputs,
+    });
+  }
+
+  async getWorkflow(
+    installationId: number,
+    owner: string,
+    repo: string,
+    workflowId: string
+  ): Promise<{ id: number; name: string; path: string; state: string }> {
+    const octokit = this.getInstallationOctokit(installationId);
+    const { data } = await octokit.rest.actions.getWorkflow({
+      owner,
+      repo,
+      workflow_id: workflowId,
+    });
+    return {
+      id: data.id,
+      name: data.name,
+      path: data.path,
+      state: data.state,
+    };
+  }
+
+  async getRef(
+    installationId: number,
+    owner: string,
+    repo: string,
+    ref: string
+  ): Promise<{ ref: string; sha: string }> {
+    const octokit = this.getInstallationOctokit(installationId);
+    const cleanRef = ref.replace(/^refs\/heads\//, '');
+    try {
+      const branchRes = await octokit.rest.repos.getBranch({
+        owner,
+        repo,
+        branch: cleanRef,
+      });
+      return {
+        ref: cleanRef,
+        sha: branchRes.data.commit.sha,
+      };
+    } catch {
+      const formattedRef = ref.startsWith('refs/') ? ref.replace(/^refs\//, '') : `heads/${ref}`;
+      const gitRefRes = await octokit.rest.git.getRef({
+        owner,
+        repo,
+        ref: formattedRef,
+      });
+      return {
+        ref: cleanRef,
+        sha: gitRefRes.data.object.sha,
+      };
+    }
   }
 }
 

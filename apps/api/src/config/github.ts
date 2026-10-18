@@ -8,6 +8,7 @@ export interface GithubAppConfig {
   privateKey: string;
   callbackUrl: string;
   frontendUrl: string;
+  webhookSecret?: string;
 }
 
 /**
@@ -55,6 +56,8 @@ export function getGithubAppConfig(): GithubAppConfig {
     process.env.GITHUB_CALLBACK_URL || 'http://localhost:5000/api/github/callback';
   const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
 
+  const webhookSecret = process.env.GITHUB_WEBHOOK_SECRET;
+
   if (!appId || !privateKey) {
     throw new Error(
       'GitHub App is not configured. Please set GITHUB_APP_ID and GITHUB_APP_PRIVATE_KEY (or GITHUB_APP_PRIVATE_KEY_PATH) in your environment.'
@@ -69,5 +72,10 @@ export function getGithubAppConfig(): GithubAppConfig {
     privateKey,
     callbackUrl,
     frontendUrl,
+    webhookSecret,
   };
+}
+
+export function getGithubWebhookSecret(): string | null {
+  return process.env.GITHUB_WEBHOOK_SECRET || null;
 }

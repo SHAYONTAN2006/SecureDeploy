@@ -17,6 +17,8 @@ import {
 import { authRouter } from './routes/auth.js';
 import { githubRouter } from './routes/github.js';
 import { projectsRouter } from './routes/projects.js';
+import { pipelinesRouter } from './routes/pipelines.js';
+import { webhooksRouter } from './routes/webhooks.js';
 
 export interface AppOptions {
   authMiddleware?: RequestHandler;
@@ -46,8 +48,15 @@ export function createApp(options: AppOptions = {}) {
   // Cookie parser signed with session secret
   application.use(cookieParser(sessionSecret));
 
-  // Request body parsing with defensive payload limit
-  application.use(express.json({ limit: '100kb' }));
+  // Request body parsing with defensive payload limit and raw body capture for webhook HMAC verification
+  application.use(
+    express.json({
+      limit: '100kb',
+      verify: (req: Request, _res: Response, buf: Buffer) => {
+        (req as Request & { rawBody?: Buffer }).rawBody = buf;
+      },
+    })
+  );
 
   // PostgreSQL-backed session middleware
   const store = options.sessionStore || createPgSessionStore();
@@ -67,6 +76,9 @@ export function createApp(options: AppOptions = {}) {
       },
     })
   );
+
+  // GitHub Webhook ingestion endpoint (authenticated via HMAC X-Hub-Signature-256; mounted before browser CSRF)
+  application.use('/api/webhooks', webhooksRouter);
 
   // CSRF protection for state-changing requests
   if (options.enableCsrf !== false) {
@@ -95,7 +107,8 @@ export function createApp(options: AppOptions = {}) {
   // GitHub App integration endpoints
   application.use('/api/github', githubRouter);
 
-  // Project Management API routes
+  // Project Management API routes & Pipeline orchestration routes
+  application.use('/api/projects/:projectId/pipelines', pipelinesRouter);
   application.use('/api/projects', projectsRouter);
 
   // 404 handler

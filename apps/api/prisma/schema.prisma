@@ -17,6 +17,7 @@ model User {
   passwordHash   String?
   projects       Project[]
   installations  GithubInstallation[]
+  pipelineRuns   PipelineRun[]
   createdAt      DateTime             @default(now())
   updatedAt      DateTime             @updatedAt
 
@@ -24,14 +25,15 @@ model User {
 }
 
 model Project {
-  id          String             @id @default(uuid()) @db.Uuid
-  name        String
-  description String?
-  ownerId     String             @db.Uuid
-  owner       User               @relation(fields: [ownerId], references: [id], onDelete: Cascade)
-  repository  ProjectRepository?
-  createdAt   DateTime           @default(now())
-  updatedAt   DateTime           @updatedAt
+  id           String             @id @default(uuid()) @db.Uuid
+  name         String
+  description  String?
+  ownerId      String             @db.Uuid
+  owner        User               @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  repository   ProjectRepository?
+  pipelineRuns PipelineRun[]
+  createdAt    DateTime           @default(now())
+  updatedAt    DateTime           @updatedAt
 
   @@index([ownerId])
   @@map("projects")
@@ -68,12 +70,56 @@ model ProjectRepository {
   fullName       String
   repoUrl        String
   defaultBranch  String             @default("main")
+  pipelineRuns   PipelineRun[]
   createdAt      DateTime           @default(now())
   updatedAt      DateTime           @updatedAt
 
   @@index([installationId])
   @@index([repoId])
   @@map("project_repositories")
+}
+
+model PipelineRun {
+  id                  String             @id @default(uuid()) @db.Uuid
+  projectId           String             @db.Uuid
+  project             Project            @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  projectRepositoryId String?            @db.Uuid
+  projectRepository   ProjectRepository? @relation(fields: [projectRepositoryId], references: [id], onDelete: SetNull)
+  triggeredById       String             @db.Uuid
+  triggeredBy         User               @relation(fields: [triggeredById], references: [id], onDelete: Cascade)
+
+  workflowFile        String
+  gitRef              String
+  commitSha           String?
+  githubRunId         BigInt?            @unique
+  githubRunNumber     Int?
+  githubRunAttempt    Int?               @default(1)
+  htmlUrl             String?
+
+  status              String             @default("PENDING_DISPATCH")
+  conclusion          String?
+  errorMessage        String?
+
+  startedAt           DateTime?
+  completedAt         DateTime?
+  createdAt           DateTime           @default(now())
+  updatedAt           DateTime           @updatedAt
+
+  @@index([projectId, createdAt(sort: Desc)])
+  @@index([triggeredById])
+  @@index([githubRunId])
+  @@index([status])
+  @@map("pipeline_runs")
+}
+
+model WebhookDelivery {
+  id          String   @id
+  event       String
+  action      String?
+  statusCode  Int      @default(200)
+  processedAt DateTime @default(now())
+
+  @@map("webhook_deliveries")
 }
 
 model Session {

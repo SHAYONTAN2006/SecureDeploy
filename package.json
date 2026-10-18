@@ -16,7 +16,12 @@
     "test:web": "npm run test --workspace=@securedeploy/web",
     "lint": "eslint .",
     "format": "prettier --write .",
-    "format:check": "prettier --check ."
+    "format:check": "prettier --check .",
+    "db:generate": "npm run prisma:generate --workspace=@securedeploy/api",
+    "db:migrate": "npm run prisma:migrate:dev --workspace=@securedeploy/api",
+    "db:validate": "npm run prisma:validate --workspace=@securedeploy/api",
+    "db:up": "docker compose up -d postgres",
+    "db:down": "docker compose down"
   },
   "devDependencies": {
     "@eslint/js": "^9.20.0",

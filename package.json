@@ -1,0 +1,28 @@
+{
+  "name": "securedeploy",
+  "version": "0.1.0",
+  "private": true,
+  "workspaces": [
+    "apps/*"
+  ],
+  "scripts": {
+    "dev:api": "npm run dev --workspace=@securedeploy/api",
+    "dev:web": "npm run dev --workspace=@securedeploy/web",
+    "build": "npm run build --workspaces",
+    "build:api": "npm run build --workspace=@securedeploy/api",
+    "build:web": "npm run build --workspace=@securedeploy/web",
+    "test": "npm run test --workspaces",
+    "test:api": "npm run test --workspace=@securedeploy/api",
+    "test:web": "npm run test --workspace=@securedeploy/web",
+    "lint": "eslint .",
+    "format": "prettier --write .",
+    "format:check": "prettier --check ."
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.20.0",
+    "eslint": "^9.20.0",
+    "prettier": "^3.5.1",
+    "typescript": "^5.7.3",
+    "typescript-eslint": "^8.24.0"
+  }
+}

@@ -10,6 +10,7 @@ export interface AuthUser {
 declare module 'express-session' {
   interface SessionData {
     userId?: string;
+    githubInstallState?: string;
   }
 }
 

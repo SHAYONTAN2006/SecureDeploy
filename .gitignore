@@ -18,6 +18,12 @@ out/
 *.env
 !.env.example
 
+# Secrets & Private Keys
+*.pem
+*.key
+*.crt
+*.cert
+
 # Testing & Coverage
 coverage/
 *.lcov

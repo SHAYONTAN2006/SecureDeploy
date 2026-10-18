@@ -7,29 +7,45 @@ interface ApiHealthResponse {
   uptime: number;
 }
 
+interface GithubStatusResponse {
+  configured: boolean;
+  slug?: string;
+  message?: string;
+}
+
 export default function App() {
   const [apiHealth, setApiHealth] = useState<ApiHealthResponse | null>(null);
+  const [githubStatus, setGithubStatus] = useState<GithubStatusResponse | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
 
+  const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:5000';
+
   useEffect(() => {
-    const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:5000';
-    fetch(`${apiUrl}/api/health`)
-      .then((res) => {
-        if (!res.ok) {
-          throw new Error(`HTTP error! status: ${res.status}`);
+    Promise.all([
+      fetch(`${apiUrl}/api/health`)
+        .then((res) => (res.ok ? res.json() : null))
+        .catch(() => null),
+      fetch(`${apiUrl}/api/github/status`)
+        .then((res) => (res.ok ? res.json() : null))
+        .catch(() => null),
+    ])
+      .then(([healthData, ghData]) => {
+        if (healthData) {
+          setApiHealth(healthData);
+        } else {
+          setError('Backend API is unreachable');
         }
-        return res.json();
-      })
-      .then((data) => {
-        setApiHealth(data);
+        if (ghData) {
+          setGithubStatus(ghData);
+        }
         setLoading(false);
       })
       .catch((err) => {
         setError(err.message);
         setLoading(false);
       });
-  }, []);
+  }, [apiUrl]);
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col justify-between selection:bg-emerald-500 selection:text-slate-950">
@@ -43,14 +59,14 @@ export default function App() {
             <div>
               <span className="font-bold tracking-tight text-lg">SecureDeploy</span>
               <span className="ml-2 text-xs font-mono uppercase bg-slate-800 text-slate-400 px-2 py-0.5 rounded">
-                Phase 0
+                Phase 2
               </span>
             </div>
           </div>
           <div className="flex items-center space-x-3 text-xs">
             <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium bg-emerald-950/80 text-emerald-300 border border-emerald-800">
               <span className="w-1.5 h-1.5 mr-1.5 bg-emerald-400 rounded-full animate-pulse"></span>
-              Foundation Initialized
+              Core System Active
             </span>
           </div>
         </div>
@@ -70,7 +86,7 @@ export default function App() {
         </div>
 
         {/* Status Grid */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-12">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-12">
           {/* System Vitality Card */}
           <div className="bg-slate-900/60 border border-slate-800 rounded-xl p-6 shadow-sm">
             <div className="flex items-center justify-between mb-4">
@@ -111,6 +127,44 @@ export default function App() {
             )}
           </div>
 
+          {/* GitHub App Integration Card */}
+          <div className="bg-slate-900/60 border border-slate-800 rounded-xl p-6 shadow-sm">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-sm font-semibold uppercase tracking-wider text-slate-400">
+                GitHub App Integration
+              </h2>
+              <span className="text-xs font-mono text-slate-500">Phase 2</span>
+            </div>
+
+            {githubStatus?.configured ? (
+              <div className="space-y-3">
+                <div className="bg-emerald-950/30 border border-emerald-800/60 rounded-lg p-3 text-xs text-emerald-300">
+                  <div className="font-semibold mb-1">GitHub App Configured</div>
+                  <div className="text-emerald-400/80 font-mono">App Slug: {githubStatus.slug}</div>
+                </div>
+                <a
+                  href={`${apiUrl}/api/github/install?redirect=true`}
+                  className="block text-center py-2 px-3 bg-emerald-600 hover:bg-emerald-500 text-slate-950 font-semibold rounded-lg text-xs transition-colors"
+                >
+                  Connect GitHub Account
+                </a>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                <div className="bg-slate-950/80 border border-slate-800 rounded-lg p-3 text-xs text-slate-400">
+                  <div className="font-semibold text-slate-300 mb-1">Setup Required</div>
+                  <p className="text-[11px] text-slate-500">
+                    Set `GITHUB_APP_ID` and `GITHUB_APP_PRIVATE_KEY_PATH` in `.env` to enable
+                    multi-user repository linking.
+                  </p>
+                </div>
+                <span className="inline-block py-1.5 px-3 bg-slate-800 text-slate-500 text-xs rounded-lg cursor-not-allowed">
+                  Awaiting App Credentials
+                </span>
+              </div>
+            )}
+          </div>
+
           {/* Architecture Overview Card */}
           <div className="bg-slate-900/60 border border-slate-800 rounded-xl p-6 shadow-sm">
             <h2 className="text-sm font-semibold uppercase tracking-wider text-slate-400 mb-4">
@@ -126,12 +180,12 @@ export default function App() {
                 <div className="font-medium text-slate-200">Express + TypeScript</div>
               </div>
               <div className="bg-slate-950/80 p-3 rounded-lg border border-slate-800">
-                <div className="text-slate-500 mb-1">Monorepo</div>
-                <div className="font-medium text-slate-200">npm Workspaces</div>
+                <div className="text-slate-500 mb-1">Database</div>
+                <div className="font-medium text-slate-200">PostgreSQL + Prisma</div>
               </div>
               <div className="bg-slate-950/80 p-3 rounded-lg border border-slate-800">
-                <div className="text-slate-500 mb-1">Target Cloud</div>
-                <div className="font-medium text-slate-200">AWS (ECS, ALB, RDS)</div>
+                <div className="text-slate-500 mb-1">Auth &amp; Session</div>
+                <div className="font-medium text-slate-200">Argon2id + PG Session</div>
               </div>
             </div>
           </div>
@@ -143,21 +197,29 @@ export default function App() {
             Security &amp; Automation Roadmap
           </h2>
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
+            <div className="border border-emerald-800/50 p-3 rounded-lg bg-emerald-950/20">
+              <span className="block text-emerald-400 text-[10px] uppercase font-mono">
+                Phase 2 Active
+              </span>
+              <span className="font-medium text-slate-200">GitHub App Integration</span>
+            </div>
             <div className="border border-slate-800 p-3 rounded-lg bg-slate-950/40">
-              <span className="block text-slate-500 text-[10px] uppercase font-mono">Phase 2</span>
+              <span className="block text-slate-500 text-[10px] uppercase font-mono">
+                Phase 2 Planned
+              </span>
               <span className="font-medium text-slate-300">Gitleaks &amp; Semgrep</span>
             </div>
             <div className="border border-slate-800 p-3 rounded-lg bg-slate-950/40">
-              <span className="block text-slate-500 text-[10px] uppercase font-mono">Phase 2</span>
+              <span className="block text-slate-500 text-[10px] uppercase font-mono">
+                Phase 2 Planned
+              </span>
               <span className="font-medium text-slate-300">Trivy &amp; Checkov</span>
             </div>
             <div className="border border-slate-800 p-3 rounded-lg bg-slate-950/40">
-              <span className="block text-slate-500 text-[10px] uppercase font-mono">Phase 3</span>
+              <span className="block text-slate-500 text-[10px] uppercase font-mono">
+                Phase 3 Planned
+              </span>
               <span className="font-medium text-slate-300">Policy Engine</span>
-            </div>
-            <div className="border border-slate-800 p-3 rounded-lg bg-slate-950/40">
-              <span className="block text-slate-500 text-[10px] uppercase font-mono">Phase 5</span>
-              <span className="font-medium text-slate-300">Terraform &amp; AWS</span>
             </div>
           </div>
         </div>
@@ -165,7 +227,7 @@ export default function App() {
 
       {/* Footer */}
       <footer className="border-t border-slate-800/60 py-6 text-center text-xs text-slate-500">
-        SecureDeploy &bull; Phase 0 Foundation &bull; Internal Development Mode
+        SecureDeploy &bull; Phase 2 Active Development &bull; Internal Development Mode
       </footer>
     </div>
   );

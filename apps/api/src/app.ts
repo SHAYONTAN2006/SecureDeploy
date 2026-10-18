@@ -14,8 +14,8 @@ import {
   isInvalidCsrfTokenError,
   SESSION_COOKIE_NAME,
 } from './config/security.js';
-import { requireAuth } from './middleware/auth.js';
 import { authRouter } from './routes/auth.js';
+import { githubRouter } from './routes/github.js';
 import { projectsRouter } from './routes/projects.js';
 
 export interface AppOptions {
@@ -73,6 +73,12 @@ export function createApp(options: AppOptions = {}) {
     application.use(doubleCsrfProtection);
   }
 
+  // Apply test identity/auth injection if provided for test environments
+  const injectedAuth = options.authMiddleware || options.identityMiddleware;
+  if (injectedAuth) {
+    application.use(injectedAuth);
+  }
+
   // Health check endpoint (public, unauthenticated)
   application.get('/api/health', (_req: Request, res: Response) => {
     res.status(200).json({
@@ -86,9 +92,11 @@ export function createApp(options: AppOptions = {}) {
   // Authentication endpoints
   application.use('/api/auth', authRouter);
 
-  // Project Management API routes (protected by requireAuth or injected test auth)
-  const authHandler = options.authMiddleware || options.identityMiddleware || requireAuth;
-  application.use('/api/projects', authHandler, projectsRouter);
+  // GitHub App integration endpoints
+  application.use('/api/github', githubRouter);
+
+  // Project Management API routes
+  application.use('/api/projects', projectsRouter);
 
   // 404 handler
   application.use((_req: Request, res: Response) => {

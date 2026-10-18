@@ -78,6 +78,15 @@ export async function findInstallationByInstallationId(installationId: bigint, u
 }
 
 /**
+ * Finds an installation by its GitHub installation ID across all users.
+ */
+export async function findInstallationByInstallationIdOnly(installationId: bigint) {
+  return prisma.githubInstallation.findFirst({
+    where: { installationId },
+  });
+}
+
+/**
  * Finds all installations connected to a user.
  */
 export async function findInstallationsByUserId(userId: string) {

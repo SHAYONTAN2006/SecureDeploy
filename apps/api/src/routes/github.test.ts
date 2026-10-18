@@ -261,6 +261,16 @@ describe('Multi-User GitHub App Integration (/api/github & /api/projects/:id/rep
       expect(replayRes.status).toBe(400);
     });
 
+    it('returns 404 if the installation does not exist or was revoked on GitHub during callback', async () => {
+      const agentA = request.agent(appA);
+      const init = await agentA.get('/api/github/install');
+      const res = await agentA.get(
+        `/api/github/callback?installation_id=99999999&state=${init.body.state}`
+      );
+      expect(res.status).toBe(404);
+      expect(res.body.message).toMatch(/not found or has been revoked/i);
+    });
+
     it('never leaks installation access tokens or secrets in responses', async () => {
       const agentA = request.agent(appA);
       const res = await agentA.get('/api/github/installations');
@@ -308,6 +318,32 @@ describe('Multi-User GitHub App Integration (/api/github & /api/projects/:id/rep
       const resB = await request(appB).get('/api/github/installations/12345678/repositories');
       expect(resB.status).toBe(404);
       expect(resB.body.error).toBe('Not Found');
+    });
+
+    it('prevents User B from claiming an installation already associated with User A', async () => {
+      const agentB = request.agent(appB);
+      const initB = await agentB.get('/api/github/install');
+      const res = await agentB.get(
+        `/api/github/callback?installation_id=12345678&state=${initB.body.state}`
+      );
+      expect(res.status).toBe(409);
+      expect(res.body.message).toMatch(/already associated with another SecureDeploy user/i);
+    });
+
+    it('returns 502 if GitHub API fails or is unreachable when listing repositories', async () => {
+      // Mock temporary failure
+      const originalList = mockGithubService.listInstallationRepositories;
+      mockGithubService.listInstallationRepositories = vi
+        .fn()
+        .mockRejectedValueOnce(new Error('GitHub API rate limited or installation revoked'));
+
+      try {
+        const res = await request(appA).get('/api/github/installations/12345678/repositories');
+        expect(res.status).toBe(502);
+        expect(res.body.error).toBe('Bad Gateway');
+      } finally {
+        mockGithubService.listInstallationRepositories = originalList;
+      }
     });
 
     it('supports repository pagination parameters', async () => {

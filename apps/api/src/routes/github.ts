@@ -134,7 +134,28 @@ githubRouter.get(
 
       // Verify installation existence and permissions through GitHub API
       const githubService = getGithubService();
-      const details = await githubService.getInstallationDetails(installationIdNum);
+      let details;
+      try {
+        details = await githubService.getInstallationDetails(installationIdNum);
+      } catch {
+        res.status(404).json({
+          error: 'Not Found',
+          message: 'The installation was not found or has been revoked on GitHub.',
+        });
+        return;
+      }
+
+      // Ensure installation cannot be claimed by another SecureDeploy user
+      const existingInstallation = await githubDb.findInstallationByInstallationIdOnly(
+        BigInt(details.id)
+      );
+      if (existingInstallation && existingInstallation.userId !== req.user!.id) {
+        res.status(409).json({
+          error: 'Conflict',
+          message: 'This GitHub installation is already associated with another SecureDeploy user.',
+        });
+        return;
+      }
 
       // Associate installation with the authenticated SecureDeploy user
       const installation = await githubDb.upsertInstallation({
@@ -226,22 +247,30 @@ githubRouter.get(
       }
 
       const githubService = getGithubService();
-      const reposResult = await githubService.listInstallationRepositories(
-        Number(installation.installationId),
-        queryParse.data
-      );
+      try {
+        const reposResult = await githubService.listInstallationRepositories(
+          Number(installation.installationId),
+          queryParse.data
+        );
 
-      res.status(200).json({
-        installation: {
-          id: installation.id,
-          installationId: installation.installationId.toString(),
-          accountLogin: installation.accountLogin,
-        },
-        page: queryParse.data.page,
-        perPage: queryParse.data.per_page,
-        totalCount: reposResult.totalCount,
-        repositories: reposResult.repositories,
-      });
+        res.status(200).json({
+          installation: {
+            id: installation.id,
+            installationId: installation.installationId.toString(),
+            accountLogin: installation.accountLogin,
+          },
+          page: queryParse.data.page,
+          perPage: queryParse.data.per_page,
+          totalCount: reposResult.totalCount,
+          repositories: reposResult.repositories,
+        });
+      } catch {
+        res.status(502).json({
+          error: 'Bad Gateway',
+          message:
+            'Failed to retrieve repositories from GitHub. The installation may have been revoked.',
+        });
+      }
     } catch (error) {
       next(error);
     }

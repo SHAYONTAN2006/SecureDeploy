@@ -6,7 +6,7 @@ import {
   findWebhookDelivery,
   recordWebhookDelivery,
   findPipelineRunByGithubRunId,
-  findLatestDispatchedRunForCorrelation,
+  findCandidateDispatchedRuns,
   updatePipelineRun,
   createPipelineRun,
 } from '../db/pipelines.js';
@@ -77,9 +77,10 @@ webhooksRouter.post('/github', async (req: Request & { rawBody?: Buffer }, res: 
       return;
     }
 
-    // Idempotency: Ignore duplicate deliveries
-    const existingDelivery = await findWebhookDelivery(deliveryId);
-    if (existingDelivery) {
+    // Concurrency-safe atomic idempotency claim:
+    // 1. Fast-path check: return immediately if delivery is already known
+    const existing = await findWebhookDelivery(deliveryId);
+    if (existing) {
       res.status(200).json({
         status: 'ignored',
         message: 'Delivery already processed.',
@@ -88,8 +89,17 @@ webhooksRouter.post('/github', async (req: Request & { rawBody?: Buffer }, res: 
       return;
     }
 
-    // Record delivery for idempotency
-    await recordWebhookDelivery(deliveryId, event, req.body?.action);
+    // 2. Concurrency claim: atomic insert ensures simultaneous duplicate deliveries
+    // will fail on unique primary key constraint without race conditions.
+    const delivery = await recordWebhookDelivery(deliveryId, event, req.body?.action);
+    if (!delivery) {
+      res.status(200).json({
+        status: 'ignored',
+        message: 'Delivery already processed.',
+        deliveryId,
+      });
+      return;
+    }
 
     // Handle initial webhook ping
     if (event === 'ping') {
@@ -145,12 +155,24 @@ webhooksRouter.post('/github', async (req: Request & { rawBody?: Buffer }, res: 
       let pipeline = await findPipelineRunByGithubRunId(runIdBigInt);
 
       if (!pipeline) {
-        // Correlate with the latest unconfirmed dispatched run for this project repo
-        pipeline = await findLatestDispatchedRunForCorrelation(
-          projectRepo.id,
-          workflowRun.path || '',
-          workflowRun.head_branch || ''
-        );
+        // Query candidate unconfirmed dispatched runs with strict authoritative criteria
+        const candidates = await findCandidateDispatchedRuns({
+          projectRepositoryId: projectRepo.id,
+          workflowFile: workflowRun.path || '',
+          gitRef: workflowRun.head_branch || '',
+          commitSha: workflowRun.head_sha || null,
+          runCreatedAt: workflowRun.created_at ? new Date(workflowRun.created_at) : null,
+        });
+
+        if (candidates.length === 1) {
+          // Unambiguous 1-to-1 match: exactly one pending dispatch matches all authoritative metadata
+          pipeline = candidates[0];
+        } else if (candidates.length > 1) {
+          // Ambiguous match: multiple concurrent dispatches exist for the identical ref and commit.
+          // Per requirements: Do NOT guess or update an arbitrary pipeline record.
+          // Leave the pending dispatches unconfirmed and record the observed GitHub run as a distinct run.
+          pipeline = null;
+        }
       }
 
       // Map GitHub status to internal lifecycle state
@@ -184,7 +206,8 @@ webhooksRouter.post('/github', async (req: Request & { rawBody?: Buffer }, res: 
           completedAt,
         });
       } else {
-        // If not correlated with an existing dispatch, record as an observed run for the project
+        // Either external run (e.g. push / manual GitHub UI) OR ambiguous concurrent dispatch:
+        // Persist the observed GitHub run directly with its real githubRunId, without guessing or corrupting pending dispatches
         await createPipelineRun({
           projectId: projectRepo.projectId,
           projectRepositoryId: projectRepo.id,
@@ -193,25 +216,14 @@ webhooksRouter.post('/github', async (req: Request & { rawBody?: Buffer }, res: 
           gitRef: workflowRun.head_branch || 'main',
           commitSha: workflowRun.head_sha || null,
           status: mappedStatus,
+          conclusion: workflowRun.conclusion || null,
+          githubRunId: runIdBigInt,
+          githubRunNumber: workflowRun.run_number || null,
+          githubRunAttempt: workflowRun.run_attempt || 1,
+          htmlUrl: workflowRun.html_url || null,
+          startedAt,
+          completedAt,
         });
-
-        // Update with full run details
-        const created = await findLatestDispatchedRunForCorrelation(
-          projectRepo.id,
-          workflowRun.path || '',
-          workflowRun.head_branch || ''
-        );
-        if (created) {
-          await updatePipelineRun(created.id, {
-            githubRunId: runIdBigInt,
-            githubRunNumber: workflowRun.run_number || null,
-            githubRunAttempt: workflowRun.run_attempt || 1,
-            htmlUrl: workflowRun.html_url || null,
-            conclusion: workflowRun.conclusion || null,
-            startedAt,
-            completedAt,
-          });
-        }
       }
 
       res.status(200).json({

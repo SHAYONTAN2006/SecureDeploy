@@ -1,3 +1,4 @@
+import { Prisma } from '@prisma/client';
 import { prisma } from '../lib/prisma.js';
 
 export interface CreatePipelineRunData {
@@ -9,6 +10,13 @@ export interface CreatePipelineRunData {
   commitSha?: string | null;
   status?: string;
   errorMessage?: string | null;
+  githubRunId?: bigint | null;
+  githubRunNumber?: number | null;
+  githubRunAttempt?: number | null;
+  htmlUrl?: string | null;
+  conclusion?: string | null;
+  startedAt?: Date | null;
+  completedAt?: Date | null;
 }
 
 export interface UpdatePipelineRunData {
@@ -38,6 +46,13 @@ export async function createPipelineRun(data: CreatePipelineRunData) {
       commitSha: data.commitSha || null,
       status: data.status || 'PENDING_DISPATCH',
       errorMessage: data.errorMessage || null,
+      githubRunId: data.githubRunId || null,
+      githubRunNumber: data.githubRunNumber || null,
+      githubRunAttempt: data.githubRunAttempt || 1,
+      htmlUrl: data.htmlUrl || null,
+      conclusion: data.conclusion || null,
+      startedAt: data.startedAt || null,
+      completedAt: data.completedAt || null,
     },
     include: {
       project: {
@@ -71,9 +86,16 @@ export async function updatePipelineRun(id: string, data: UpdatePipelineRunData)
     return null;
   }
 
-  // Prevent regressing completed or failed runs to earlier queued/in_progress states
+  // If this is a new run attempt (retry / rerun), allow transitioning from terminal status
+  const isNewAttempt =
+    typeof data.githubRunAttempt === 'number' &&
+    typeof current.githubRunAttempt === 'number' &&
+    data.githubRunAttempt > current.githubRunAttempt;
+
+  // Prevent regressing completed or failed runs to earlier queued/in_progress states unless it's a new attempt
   const terminalStatuses = ['COMPLETED', 'FAILED'];
   if (
+    !isNewAttempt &&
     terminalStatuses.includes(current.status) &&
     data.status &&
     !terminalStatuses.includes(data.status)
@@ -189,6 +211,68 @@ export async function findLatestDispatchedRunForCorrelation(
     },
     orderBy: {
       createdAt: 'desc',
+    },
+    include: {
+      project: true,
+      projectRepository: true,
+    },
+  });
+}
+
+export interface FindCandidatesParams {
+  projectRepositoryId: string;
+  workflowFile: string;
+  gitRef: string;
+  commitSha?: string | null;
+  runCreatedAt?: Date | null;
+}
+
+/**
+ * Finds all candidate unconfirmed dispatched runs matching workflow, ref, commit SHA, and time window.
+ * Returns an array of candidates so callers can detect and reject ambiguous matches.
+ */
+export async function findCandidateDispatchedRuns(params: FindCandidatesParams) {
+  const { projectRepositoryId, workflowFile, gitRef, commitSha, runCreatedAt } = params;
+  const normalizedFile = workflowFile.replace(/^\.github\/workflows\//, '');
+  const normalizedRef = gitRef.replace(/^refs\/heads\//, '');
+
+  const andConditions: Prisma.PipelineRunWhereInput[] = [
+    {
+      OR: [{ gitRef }, { gitRef: normalizedRef }, { gitRef: `refs/heads/${normalizedRef}` }],
+    },
+  ];
+
+  // If authoritative commit SHA is provided by GitHub, require an exact match
+  if (commitSha) {
+    andConditions.push({ commitSha });
+  }
+
+  // If GitHub run creation timestamp is available, enforce chronological ordering
+  if (runCreatedAt) {
+    const maxCreatedAt = new Date(runCreatedAt.getTime() + 15_000); // 15s clock skew allowance
+    const minCreatedAt = new Date(runCreatedAt.getTime() - 30 * 60 * 1000); // 30 minute dispatch window
+    andConditions.push({
+      createdAt: {
+        lte: maxCreatedAt,
+        gte: minCreatedAt,
+      },
+    });
+  }
+
+  return prisma.pipelineRun.findMany({
+    where: {
+      projectRepositoryId,
+      githubRunId: null,
+      status: { in: ['PENDING_DISPATCH', 'DISPATCHED'] },
+      OR: [
+        { workflowFile },
+        { workflowFile: normalizedFile },
+        { workflowFile: `.github/workflows/${normalizedFile}` },
+      ],
+      AND: andConditions,
+    },
+    orderBy: {
+      createdAt: 'asc', // oldest pending dispatch first
     },
     include: {
       project: true,

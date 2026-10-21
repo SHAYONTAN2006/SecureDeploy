@@ -191,37 +191,50 @@ export default function App() {
           </div>
         </div>
 
-        {/* CI/CD Pipeline Orchestration Section */}
+        {/* CI/CD Pipeline Orchestration & Gitleaks Secret Detection Section */}
         <div className="bg-slate-900/60 border border-slate-800 rounded-xl p-6 shadow-sm mb-12">
           <div className="flex items-center justify-between mb-4">
             <div>
               <h2 className="text-base font-semibold text-slate-200">
-                CI/CD Pipeline Orchestration
+                CI/CD Pipeline &amp; Gitleaks Secret Detection
               </h2>
               <p className="text-xs text-slate-400 mt-1">
-                Trigger approved GitHub Actions workflows on linked project repositories and track
-                runs.
+                Trigger GitHub Actions workflows on linked repositories and ingest normalized,
+                sanitized Gitleaks secret scan findings.
               </p>
             </div>
             <span className="text-xs font-mono uppercase bg-emerald-950/80 text-emerald-300 border border-emerald-800/80 px-2.5 py-1 rounded-full">
-              Phase 2 Active
+              Phase 3 Active
             </span>
           </div>
 
-          <div className="bg-slate-950/80 border border-slate-800/80 rounded-lg p-5">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="bg-slate-950/80 border border-slate-800/80 rounded-lg p-5">
               <div className="space-y-1">
                 <div className="text-xs font-medium text-slate-300">
                   Workflow Dispatch &amp; Webhook Synchronization
                 </div>
-                <div className="text-[11px] text-slate-500">
-                  Dispatches `workflow_dispatch` via GitHub App installation access tokens and
-                  tracks live status via HMAC-verified webhooks.
+                <div className="text-[11px] text-slate-500 mb-3">
+                  Dispatches `workflow_dispatch` via GitHub App installation tokens and tracks live
+                  lifecycle states via HMAC-verified webhooks.
                 </div>
-              </div>
-              <div className="flex items-center gap-2">
                 <span className="inline-flex items-center text-xs font-mono px-2.5 py-1 rounded bg-slate-900 text-slate-300 border border-slate-800">
                   POST /api/projects/:id/pipelines
+                </span>
+              </div>
+            </div>
+
+            <div className="bg-slate-950/80 border border-slate-800/80 rounded-lg p-5">
+              <div className="space-y-1">
+                <div className="text-xs font-medium text-slate-300">
+                  Gitleaks Secret Detection &amp; Sanitization
+                </div>
+                <div className="text-[11px] text-slate-500 mb-3">
+                  Executes pinned Gitleaks action in GitHub Actions, parses artifacts, redacts
+                  plaintext secrets, and indexes stable fingerprints.
+                </div>
+                <span className="inline-flex items-center text-xs font-mono px-2.5 py-1 rounded bg-slate-900 text-slate-300 border border-slate-800">
+                  GET /api/projects/:id/pipelines/:runId/scans
                 </span>
               </div>
             </div>
@@ -236,19 +249,19 @@ export default function App() {
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
             <div className="border border-emerald-800/50 p-3 rounded-lg bg-emerald-950/20">
               <span className="block text-emerald-400 text-[10px] uppercase font-mono">
-                Phase 2 Active
+                Phase 3 Active
               </span>
-              <span className="font-medium text-slate-200">GitHub App Integration</span>
+              <span className="font-medium text-slate-200">Gitleaks Secret Detection</span>
             </div>
             <div className="border border-slate-800 p-3 rounded-lg bg-slate-950/40">
               <span className="block text-slate-500 text-[10px] uppercase font-mono">
-                Phase 2 Planned
+                Phase 3 Planned
               </span>
-              <span className="font-medium text-slate-300">Gitleaks &amp; Semgrep</span>
+              <span className="font-medium text-slate-300">Semgrep SAST Scanning</span>
             </div>
             <div className="border border-slate-800 p-3 rounded-lg bg-slate-950/40">
               <span className="block text-slate-500 text-[10px] uppercase font-mono">
-                Phase 2 Planned
+                Phase 3 Planned
               </span>
               <span className="font-medium text-slate-300">Trivy &amp; Checkov</span>
             </div>
@@ -264,7 +277,7 @@ export default function App() {
 
       {/* Footer */}
       <footer className="border-t border-slate-800/60 py-6 text-center text-xs text-slate-500">
-        SecureDeploy &bull; Phase 2 Active Development &bull; Internal Development Mode
+        SecureDeploy &bull; Phase 3 Active Development &bull; Internal Development Mode
       </footer>
     </div>
   );

@@ -82,6 +82,8 @@ describe('CI/CD Pipeline Orchestration API & Webhooks (/api/projects/:projectId/
         }
         return Promise.resolve();
       }),
+    listWorkflowRunArtifacts: vi.fn().mockResolvedValue({ totalCount: 0, artifacts: [] }),
+    downloadWorkflowRunArtifact: vi.fn().mockResolvedValue(Buffer.alloc(0)),
   };
 
   beforeAll(async () => {

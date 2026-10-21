@@ -1,0 +1,90 @@
+# SecureDeploy — Gitleaks Secret Detection Workflow Template
+#
+# SETUP INSTRUCTIONS FOR CONNECTED REPOSITORIES:
+# 1. Place this file in your repository at `.github/workflows/securedeploy-gitleaks.yml`.
+# 2. Push this file to your default branch (e.g. `main`).
+# 3. SecureDeploy will be able to dispatch this workflow via GitHub App installation
+#    permissions and automatically ingest scan results from the uploaded artifact.
+#
+# SECURITY PRACTICES APPLIED:
+# - Least privilege: `permissions: contents: read` only.
+# - Pinned third-party actions to immutable commit SHAs.
+# - Avoids `pull_request_target` to prevent untrusted code execution.
+# - Secret redaction: Gitleaks summary disabled (`GITLEAKS_ENABLE_SUMMARY: false`)
+#   to prevent dumping raw secret values into GitHub Actions workflow logs.
+# - Uploads scan artifact with restricted retention.
+
+name: SecureDeploy Secret Scan
+
+on:
+  workflow_dispatch:
+    inputs:
+      scan_depth:
+        description: 'Git history scan depth (0 for full commit history, 1 for latest commit)'
+        required: false
+        default: '0'
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+# Principle of least privilege
+permissions:
+  contents: read
+
+jobs:
+  gitleaks:
+    name: Gitleaks Secret Detection
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout repository code
+        # actions/checkout@v4.2.2 pinned to commit SHA
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          # fetch-depth: 0 ensures complete Git history is available for secret scanning.
+          # Note: In shallow clones or forked pull requests, Git history may be limited.
+          fetch-depth: ${{ inputs.scan_depth || 0 }}
+
+      - name: Run Gitleaks Secret Scanner
+        id: gitleaks
+        # gitleaks/gitleaks-action@v2.3.9 pinned to commit SHA
+        uses: gitleaks/gitleaks-action@773229b4dd6b8aeeb516315ee54b7be8cb909459
+        continue-on-error: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Prevent Gitleaks from printing raw secrets into the GitHub Actions step summary
+          GITLEAKS_ENABLE_SUMMARY: false
+          # Output structured JSON report for SecureDeploy ingestion
+          GITLEAKS_REPORT_PATH: gitleaks-report.json
+
+      - name: Upload Gitleaks Report Artifact
+        if: always()
+        # actions/upload-artifact@v4.6.1 pinned to commit SHA
+        uses: actions/upload-artifact@4cec3d8aa04e39d1a68397de0c4cd6fb9974f1ea
+        with:
+          name: gitleaks-report
+          path: gitleaks-report.json
+          retention-days: 14
+          if-no-files-found: ignore
+
+      - name: Evaluate Scanner Outcome
+        if: always()
+        run: |
+          EXIT_CODE="${{ steps.gitleaks.outputs.exitcode }}"
+          echo "Gitleaks scanner exited with code: ${EXIT_CODE}"
+          if [ "${EXIT_CODE}" = "0" ]; then
+            echo "Gitleaks scan completed cleanly with no exposed secrets."
+            exit 0
+          elif [ "${EXIT_CODE}" = "1" ]; then
+            echo "::warning::Gitleaks identified potential exposed secrets. Review findings in SecureDeploy."
+            # Do NOT echo or print secret contents here.
+            exit 1
+          else
+            echo "::error::Gitleaks scanner encountered an execution failure (exit code ${EXIT_CODE})."
+            exit 2
+          fi

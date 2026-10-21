@@ -105,11 +105,63 @@ model PipelineRun {
   createdAt           DateTime           @default(now())
   updatedAt           DateTime           @updatedAt
 
+  securityScans       SecurityScan[]
+
   @@index([projectId, createdAt(sort: Desc)])
   @@index([triggeredById])
   @@index([githubRunId])
   @@index([status])
   @@map("pipeline_runs")
+}
+
+model SecurityScan {
+  id              String            @id @default(uuid()) @db.Uuid
+  pipelineRunId   String            @db.Uuid
+  pipelineRun     PipelineRun       @relation(fields: [pipelineRunId], references: [id], onDelete: Cascade)
+
+  scannerName     String            @default("gitleaks") @db.VarChar(50)
+  scannerVersion  String?           @db.VarChar(50)
+  status          String            @db.VarChar(50) // "SUCCESS", "FAILURE", "ERROR"
+  hasFindings     Boolean           @default(false)
+  findingCount    Int               @default(0)
+  reportReference String?           @db.VarChar(255)
+  errorMessage    String?           @db.Text
+  scannedAt       DateTime          @default(now())
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @updatedAt
+
+  findings        SecurityFinding[]
+
+  @@index([pipelineRunId])
+  @@index([scannerName, status])
+  @@map("security_scans")
+}
+
+model SecurityFinding {
+  id              String        @id @default(uuid()) @db.Uuid
+  scanId          String        @db.Uuid
+  scan            SecurityScan  @relation(fields: [scanId], references: [id], onDelete: Cascade)
+
+  ruleId          String        @db.VarChar(100)
+  ruleDescription String?       @db.VarChar(255)
+  filePath        String        @db.VarChar(500)
+  startLine       Int?
+  endLine         Int?
+  startColumn     Int?
+  endColumn       Int?
+  commitSha       String?       @db.VarChar(40)
+  commitAuthor    String?       @db.VarChar(255)
+  commitDate      DateTime?
+  severity        String        @default("HIGH") @db.VarChar(50)
+  fingerprint     String        @db.VarChar(64) // SHA-256
+  sanitizedMatch  String?       @db.Text // NEVER contains raw secret
+
+  createdAt       DateTime      @default(now())
+
+  @@index([scanId])
+  @@index([fingerprint])
+  @@index([ruleId])
+  @@map("security_findings")
 }
 
 model WebhookDelivery {

@@ -58,6 +58,26 @@ export interface GithubServiceApi {
     repo: string,
     ref: string
   ): Promise<{ ref: string; sha: string }>;
+  listWorkflowRunArtifacts(
+    installationId: number,
+    owner: string,
+    repo: string,
+    runId: number
+  ): Promise<{
+    totalCount: number;
+    artifacts: Array<{
+      id: number;
+      name: string;
+      sizeInBytes: number;
+      expired: boolean;
+    }>;
+  }>;
+  downloadWorkflowRunArtifact(
+    installationId: number,
+    owner: string,
+    repo: string,
+    artifactId: number
+  ): Promise<Buffer>;
 }
 
 /**
@@ -244,6 +264,53 @@ class OctokitGithubService implements GithubServiceApi {
         sha: gitRefRes.data.object.sha,
       };
     }
+  }
+
+  async listWorkflowRunArtifacts(
+    installationId: number,
+    owner: string,
+    repo: string,
+    runId: number
+  ): Promise<{
+    totalCount: number;
+    artifacts: Array<{
+      id: number;
+      name: string;
+      sizeInBytes: number;
+      expired: boolean;
+    }>;
+  }> {
+    const octokit = this.getInstallationOctokit(installationId);
+    const { data } = await octokit.rest.actions.listWorkflowRunArtifacts({
+      owner,
+      repo,
+      run_id: runId,
+    });
+    return {
+      totalCount: data.total_count,
+      artifacts: data.artifacts.map((a) => ({
+        id: a.id,
+        name: a.name,
+        sizeInBytes: a.size_in_bytes,
+        expired: a.expired,
+      })),
+    };
+  }
+
+  async downloadWorkflowRunArtifact(
+    installationId: number,
+    owner: string,
+    repo: string,
+    artifactId: number
+  ): Promise<Buffer> {
+    const octokit = this.getInstallationOctokit(installationId);
+    const res = await octokit.rest.actions.downloadArtifact({
+      owner,
+      repo,
+      artifact_id: artifactId,
+      archive_format: 'zip',
+    });
+    return Buffer.from(res.data as ArrayBuffer);
   }
 }
 

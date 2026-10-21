@@ -10,6 +10,8 @@ import {
   findPipelineRunById,
   listPipelineRunsByProjectId,
 } from '../db/pipelines.js';
+import { findSecurityScansByPipelineRunId, recordSecurityScan } from '../db/scans.js';
+import { parseAndNormalizeGitleaksReport } from '../services/gitleaks.service.js';
 import {
   triggerPipelineSchema,
   pipelineListQuerySchema,
@@ -215,6 +217,24 @@ pipelinesRouter.get('/', async (req: Request, res: Response, next: NextFunction)
   }
 });
 
+// GET /api/projects/:projectId/pipelines/templates/gitleaks - Retrieve Gitleaks workflow template and instructions
+pipelinesRouter.get('/templates/gitleaks', async (_req: Request, res: Response) => {
+  res.status(200).json({
+    templateName: 'securedeploy-gitleaks.yml',
+    recommendedPath: '.github/workflows/securedeploy-gitleaks.yml',
+    scanner: 'gitleaks',
+    pinnedActionVersion: 'gitleaks/gitleaks-action@773229b4dd6b8aeeb516315ee54b7be8cb909459',
+    description:
+      'Minimal, secure Gitleaks workflow template with least-privilege permissions and secret redaction.',
+    instructions: [
+      '1. Add the template to your repository at `.github/workflows/securedeploy-gitleaks.yml`.',
+      '2. Ensure your default branch (main) includes this workflow file.',
+      '3. Trigger the workflow dispatch via SecureDeploy or via push/pull_request.',
+      '4. SecureDeploy will automatically ingest the scan artifact when the workflow run completes.',
+    ],
+  });
+});
+
 // GET /api/projects/:projectId/pipelines/:pipelineId - Retrieve a single pipeline run
 pipelinesRouter.get('/:pipelineId', async (req: Request, res: Response, next: NextFunction) => {
   try {
@@ -263,3 +283,112 @@ pipelinesRouter.get('/:pipelineId', async (req: Request, res: Response, next: Ne
     next(error);
   }
 });
+
+// GET /api/projects/:projectId/pipelines/:pipelineId/scans - Retrieve security scans for a run
+pipelinesRouter.get(
+  '/:pipelineId/scans',
+  async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const projectParam = uuidParamSchema.safeParse(req.params.projectId);
+      const pipelineParam = pipelineIdParamSchema.safeParse(req.params.pipelineId);
+
+      if (!projectParam.success || !pipelineParam.success) {
+        res.status(400).json({
+          error: 'Bad Request',
+          message: 'Invalid project ID or pipeline ID format (UUID expected)',
+        });
+        return;
+      }
+
+      const projectId = projectParam.data;
+      const pipelineId = pipelineParam.data;
+
+      const project = await projectsDb.findProjectByIdAndOwner(projectId, req.user!.id);
+      if (!project) {
+        res.status(404).json({
+          error: 'Not Found',
+          message: 'Project not found or unauthorized.',
+        });
+        return;
+      }
+
+      const pipeline = await findPipelineRunById(pipelineId, project.id);
+      if (!pipeline) {
+        res.status(404).json({
+          error: 'Not Found',
+          message: 'Pipeline run not found.',
+        });
+        return;
+      }
+
+      const scans = await findSecurityScansByPipelineRunId(pipelineId);
+      res.status(200).json({
+        pipelineId,
+        status: pipeline.status,
+        conclusion: pipeline.conclusion,
+        scans,
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+);
+
+// POST /api/projects/:projectId/pipelines/:pipelineId/scans/gitleaks - Ingest a Gitleaks scan report
+pipelinesRouter.post(
+  '/:pipelineId/scans/gitleaks',
+  async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const projectParam = uuidParamSchema.safeParse(req.params.projectId);
+      const pipelineParam = pipelineIdParamSchema.safeParse(req.params.pipelineId);
+
+      if (!projectParam.success || !pipelineParam.success) {
+        res.status(400).json({
+          error: 'Bad Request',
+          message: 'Invalid project ID or pipeline ID format (UUID expected)',
+        });
+        return;
+      }
+
+      const projectId = projectParam.data;
+      const pipelineId = pipelineParam.data;
+
+      const project = await projectsDb.findProjectByIdAndOwner(projectId, req.user!.id);
+      if (!project) {
+        res.status(404).json({
+          error: 'Not Found',
+          message: 'Project not found or unauthorized.',
+        });
+        return;
+      }
+
+      const pipeline = await findPipelineRunById(pipelineId, project.id);
+      if (!pipeline) {
+        res.status(404).json({
+          error: 'Not Found',
+          message: 'Pipeline run not found.',
+        });
+        return;
+      }
+
+      const reportData = req.body;
+      const findingsPayload = Array.isArray(reportData)
+        ? reportData
+        : reportData?.findings || reportData;
+
+      const normalized = parseAndNormalizeGitleaksReport(findingsPayload, {
+        reportReference: reportData?.reportReference || 'api:direct-ingestion',
+        scannerVersion: reportData?.scannerVersion || '8.21.2',
+      });
+
+      const scan = await recordSecurityScan(pipelineId, normalized);
+
+      res.status(201).json({
+        message: 'Security scan recorded successfully.',
+        scan,
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+);

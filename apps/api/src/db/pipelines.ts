@@ -164,6 +164,12 @@ export async function findPipelineRunById(id: string, projectId: string) {
           name: true,
         },
       },
+      securityScans: {
+        include: {
+          findings: true,
+        },
+        orderBy: { createdAt: 'desc' },
+      },
     },
   });
 }
@@ -304,6 +310,20 @@ export async function listPipelineRunsByProjectId(
             email: true,
             name: true,
           },
+        },
+        securityScans: {
+          select: {
+            id: true,
+            scannerName: true,
+            scannerVersion: true,
+            status: true,
+            hasFindings: true,
+            findingCount: true,
+            reportReference: true,
+            errorMessage: true,
+            scannedAt: true,
+          },
+          orderBy: { createdAt: 'desc' },
         },
       },
     }),

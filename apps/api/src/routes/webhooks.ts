@@ -10,6 +10,12 @@ import {
   updatePipelineRun,
   createPipelineRun,
 } from '../db/pipelines.js';
+import { getGithubService } from '../services/github.service.js';
+import {
+  extractFileFromZip,
+  parseAndNormalizeGitleaksReport,
+} from '../services/gitleaks.service.js';
+import { recordSecurityScan } from '../db/scans.js';
 
 export const webhooksRouter = Router();
 
@@ -193,6 +199,7 @@ webhooksRouter.post('/github', async (req: Request & { rawBody?: Buffer }, res: 
           ? new Date(workflowRun.updated_at)
           : undefined;
 
+      let targetPipelineId = pipeline?.id;
       if (pipeline) {
         await updatePipelineRun(pipeline.id, {
           status: mappedStatus,
@@ -208,7 +215,7 @@ webhooksRouter.post('/github', async (req: Request & { rawBody?: Buffer }, res: 
       } else {
         // Either external run (e.g. push / manual GitHub UI) OR ambiguous concurrent dispatch:
         // Persist the observed GitHub run directly with its real githubRunId, without guessing or corrupting pending dispatches
-        await createPipelineRun({
+        const createdRun = await createPipelineRun({
           projectId: projectRepo.projectId,
           projectRepositoryId: projectRepo.id,
           triggeredById: projectRepo.project.ownerId,
@@ -224,6 +231,44 @@ webhooksRouter.post('/github', async (req: Request & { rawBody?: Buffer }, res: 
           startedAt,
           completedAt,
         });
+        targetPipelineId = createdRun.id;
+      }
+
+      // If workflow has completed, inspect GitHub Actions artifacts for Gitleaks security reports
+      if (workflowRun.status === 'completed' && targetPipelineId && projectRepo.installation) {
+        try {
+          const githubService = getGithubService();
+          const instIdNum = Number(projectRepo.installation.installationId);
+          const artifactRes = await githubService.listWorkflowRunArtifacts(
+            instIdNum,
+            projectRepo.repoOwner,
+            projectRepo.repoName,
+            workflowRun.id
+          );
+
+          const gitleaksArtifact = artifactRes.artifacts.find(
+            (a) => a.name === 'gitleaks-report' || a.name === 'gitleaks-report.json'
+          );
+
+          if (gitleaksArtifact && !gitleaksArtifact.expired) {
+            const zipBuffer = await githubService.downloadWorkflowRunArtifact(
+              instIdNum,
+              projectRepo.repoOwner,
+              projectRepo.repoName,
+              gitleaksArtifact.id
+            );
+
+            const reportJsonStr = extractFileFromZip(zipBuffer, 'gitleaks-report.json');
+            if (reportJsonStr) {
+              const normalized = parseAndNormalizeGitleaksReport(reportJsonStr, {
+                reportReference: `artifact:${gitleaksArtifact.id}`,
+              });
+              await recordSecurityScan(targetPipelineId, normalized);
+            }
+          }
+        } catch {
+          // Failure to download or parse artifacts should not crash the webhook acknowledgment
+        }
       }
 
       res.status(200).json({
